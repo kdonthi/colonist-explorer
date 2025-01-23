@@ -14,5 +14,4 @@ has 1 of that resource, unless they stole one of that resource, in which case th
 game will clear the transaction log, making it impossible to re-calculate the player resource distribution.
 
 Feel free to report any bug and/or PR a fix!
-# colonist-sexplorer
-# colonist-sexplorer
+
