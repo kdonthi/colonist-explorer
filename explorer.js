@@ -1,29 +1,32 @@
+console.log("STARTEDD...");
 
-console.log("STARTED...");
+const username = "Alyeska";
+const alias = "you";
 
 var logElement;
 var initialPlacementMade = false;
-var initialPlacementDoneMessage = "Giving out starting resources";
-var placeInitialSettlementSnippet = "turn to place";
-var receivedResourcesSnippet = "got:";
+var initialPlacementDoneMessage = "received starting resources";
+var placeInitialSettlementSnippet = "placed a";
+var receivedResourcesSnippet = "got";
 var builtSnippet = "built a";
 var boughtSnippet = " bought ";
-var tradeBankGaveSnippet = "gave bank:";
+var tradeBankGaveSnippet = "gave bank";
 var tradeBankTookSnippet = "and took";
-var stoleAllOfSnippet = "stole all of";
 var discardedSnippet = "discarded";
-var tradedWithSnippet = " traded with: ";
-var tradeWantsToGiveSnippet = "wants to give:";
-var tradeGiveForSnippet = "for:";
-var stoleFromYouSnippet = "stole:";
-var stoleFromSnippet = " stole  from: "; // extra space from icon
+var tradedWithSnippet = " traded with ";
+var tradeWantsToGiveSnippet = "wants to give";
+var tradeGiveForSnippet = "for";
+var stoleFromYouSnippet = " stole";
+var stoleFromSnippet = "stole  from"; // extra space from icon
+var yearOfPlentySnippet = "took from bank"
+
 
 var wood = "wood";
 var stone = "stone";
 var wheat = "wheat";
 var brick = "brick";
 var sheep = "sheep";
-var resourceTypes = [wood, stone, wheat, brick, sheep];
+var resourceTypes = [wood, brick, sheep, wheat, stone];
 
 // Players
 var players = [];
@@ -152,10 +155,16 @@ function render() {
     }
     
     var tblBody = tbl.createTBody();
+    var offset = 0;
     // Row per player
     for (var i = 0; i < players.length; i++) {
         var player = players[i];
-        var row = tblBody.insertRow(i);
+        if (player === username) {
+            offset += 1;
+            continue;
+        }
+
+        var row = tblBody.insertRow(i - offset);
         row.className = "explorer-tbl-row";
         var playerRowCell = row.insertCell(0);
         playerRowCell.className = "explorer-tbl-player-col-cell";
@@ -179,18 +188,51 @@ function render() {
 }
 
 /**
-* Process a "got resource" message: [user icon] [user] got: ...[resource images]
+* Process a "starting resources" message: [user icon] [user] received starting resources [resource images] OR
+* Process a "got resource" message: [user icon] [user] got ...[resource images]
 */
 function parseGotMessage(pElement) {
     var textContent = pElement.textContent;
-    if (!textContent.includes(receivedResourcesSnippet)) {
+    if (!textContent.includes(initialPlacementDoneMessage) && !textContent.includes(receivedResourcesSnippet)) {
         return;
     }
-    var player = textContent.replace(receivedResourcesSnippet, "").split(" ")[0];
+    var player = textContent.split(" ")[0];
     if (!resources[player]) {
         console.log("Failed to parse player...", player, resources);
         return;
     }
+    console.log(textContent, player);
+    var images = collectionToArray(pElement.getElementsByTagName('img'));
+    for (var img of images) {
+        if (img.src.includes("card_wool")) {
+            resources[player][sheep] += 1;
+        } else if (img.src.includes("card_lumber")) {
+            resources[player][wood] += 1;
+        } else if (img.src.includes("card_brick")) {
+            resources[player][brick] += 1;
+        } else if (img.src.includes("card_ore")) {
+            resources[player][stone] += 1; 
+        } else if (img.src.includes("card_grain")) {
+            resources[player][wheat] += 1;
+        }
+    }
+}
+
+/*
+* Process a "year of plenty" message: [user icon] [user] took from bank [resource images]
+*/
+function parseYearOfPlentyMessage(pElement) {
+    var textContent = pElement.textContent;
+    if (!textContent.includes(yearOfPlentySnippet)) {
+        return;
+    }
+
+    var player = textContent.split(" ")[0];
+    if (!resources[player]) {
+        console.log("Failed to parse player...", player, resources);
+        return;
+    }
+
     var images = collectionToArray(pElement.getElementsByTagName('img'));
     for (var img of images) {
         if (img.src.includes("card_wool")) {
@@ -260,8 +302,9 @@ function parseBoughtMessage(pElement) {
     }
 }
 
+// TODO process trade with right number
 /**
- * Process a trade with the bank message: [user icon] [user] gave bank: ...[resources] and took ...[resources]
+ * Process a trade with the bank message: [user icon] [user] gave bank ...[resources] and took ...[resources]
  */
 function parseTradeBankMessage(pElement) {
     var textContent = pElement.textContent;
@@ -277,7 +320,7 @@ function parseTradeBankMessage(pElement) {
     var innerHTML = pElement.innerHTML;
     var gavebank = innerHTML.slice(innerHTML.indexOf(tradeBankGaveSnippet), innerHTML.indexOf(tradeBankTookSnippet)).split("<img");
     var andtook = innerHTML.slice(innerHTML.indexOf(tradeBankTookSnippet)).split("<img");
-    for (var imgStr of gavebank) {
+    for (var imgStr of gavebank) { // TODO shoudn't this be dependent on how much teh player gave haha
         if (imgStr.includes("card_wool")) {
             resources[player][sheep] -= 1;
         } else if (imgStr.includes("card_lumber")) {
@@ -306,27 +349,40 @@ function parseTradeBankMessage(pElement) {
 }
 
 function stealAllOfResource(receivingPlayer, resource) {
+    console.log(resources);
     for (var plyr of players) {
         if (plyr !== receivingPlayer) {
             resources[receivingPlayer][resource] += resources[plyr][resource];
             resources[plyr][resource] = 0;
+            console.log("plyr", plyr, resources[plyr]);
         }
     }
 }
 
 /**
  * Parse monopoly card ("stole all of" some resource): [user] used [monopoly icon] & stole all of: [resource icon]
+ * [user] stole [x] [resource]
  */
 function parseStoleAllOfMessage(pElement) {
     var textContent = pElement.textContent;
-    if (!textContent.includes(stoleAllOfSnippet)) {
+    if (!textContent.includes(stoleFromYouSnippet)) {
         return;
     }
-    var player = textContent.split(" ")[0];
+
+    var words = textContent.replace(stoleFromYouSnippet, "").split(" ");
+    var player = words[0];
+    var count = parseInt(words[1], 10);
+    if (isNaN(count)) { // TODO we only see count if it's a mono?
+        return;
+    }
+
+    console.log("player", player, "count", count);
+    
     if (!resources[player]) {
         console.log("Failed to parse player...", player, resources);
         return;
     }
+
     var images = collectionToArray(pElement.getElementsByTagName('img'));
     // there will only be 1 resource icon
     for (var img of images) {
@@ -345,6 +401,45 @@ function parseStoleAllOfMessage(pElement) {
 }
 
 /**
+ * Message T: [stealingPlayer] stole [resource] from you
+ */
+function parseStoleMessage(pElement) {
+    var textContent = pElement.textContent;
+    if (textContent.includes(stoleFromSnippet) || !textContent.includes(stoleFromYouSnippet)) {
+        return;
+    }
+
+    var involvedPlayers = textContent.replace(stoleFromYouSnippet, "").split(" ");
+    var stealingPlayer = involvedPlayers[0];
+    var targetPlayer = involvedPlayers[involvedPlayers.length - 1];
+    if (targetPlayer.toLowerCase() === alias) {
+        targetPlayer = username;
+    }
+    else if (stealingPlayer.toLowerCase() === alias) {
+        stealingPlayer = username;
+    }
+
+    if (!resources[stealingPlayer] || !resources[targetPlayer]) {
+        console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
+        return;
+    }
+    var images = collectionToArray(pElement.getElementsByTagName('img'));
+    for (var img of images) {
+        if (img.src.includes("card_wool")) {
+            transferResource(targetPlayer, stealingPlayer, sheep);
+        } else if (img.src.includes("card_lumber")) {
+            transferResource(targetPlayer, stealingPlayer, wood);
+        } else if (img.src.includes("card_brick")) {
+            transferResource(targetPlayer, stealingPlayer, brick);
+        } else if (img.src.includes("card_ore")) {
+            transferResource(targetPlayer, stealingPlayer, stone);
+        } else if (img.src.includes("card_grain")) {
+            transferResource(targetPlayer, stealingPlayer, wheat);
+        }
+    }
+}
+
+/**
  * When the user has to discard cards because of a robber.
  */
 function parseDiscardedMessage(pElement) {
@@ -352,7 +447,7 @@ function parseDiscardedMessage(pElement) {
     if (!textContent.includes(discardedSnippet)) {
         return;
     }
-    var player = textContent.replace(receivedResourcesSnippet, "").split(" ")[0];
+    var player = textContent.replace(discardedSnippet, "").split(" ")[0];
     if (!resources[player]) {
         console.log("Failed to parse player...", player, resources);
         return;
@@ -378,135 +473,105 @@ function transferResource(srcPlayer, destPlayer, resource, quantity = 1) {
     resources[destPlayer][resource] += quantity;
 }
 
+// TODO check how traded message looks like, but not important
 /**
  * Message T-1: [user1] wants to give: ...[resources] for: ...[resources]
  * Message T: [user1] traded with: [user2]
  */
-function parseTradedMessage(pElement, prevElement) {
-    var textContent = pElement.textContent;
-    if (!textContent.includes(tradedWithSnippet)) {
-        return;
-    }
-    var tradingPlayer = textContent.split(tradedWithSnippet)[0];
-    var agreeingPlayer = textContent.split(tradedWithSnippet)[1];
-    if (!resources[tradingPlayer] || !resources[agreeingPlayer]) {
-        console.log("Failed to parse player...", tradingPlayer, agreeingPlayer, pElement.textContent, prevElement.textContent, resources);
-        return;
-    }
-    // We have to split on the text, which isn't wrapped in tags, so we parse innerHTML, which prints the HTML and the text.
-    var innerHTML = prevElement.innerHTML; // on the trade description msg
-    var wantstogive = innerHTML.slice(innerHTML.indexOf(tradeWantsToGiveSnippet), innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
-    var givefor = innerHTML.slice(innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
-    for (var imgStr of wantstogive) {
-        if (imgStr.includes("card_wool")) {
-            transferResource(tradingPlayer, agreeingPlayer, sheep);
-        } else if (imgStr.includes("card_lumber")) {
-            transferResource(tradingPlayer, agreeingPlayer, wood);
-        } else if (imgStr.includes("card_brick")) {
-            transferResource(tradingPlayer, agreeingPlayer, brick);
-        } else if (imgStr.includes("card_ore")) {
-            transferResource(tradingPlayer, agreeingPlayer, stone);
-        } else if (imgStr.includes("card_grain")) {
-            transferResource(tradingPlayer, agreeingPlayer, wheat);
-        }
-    }
-    for (var imgStr of givefor) {
-        if (imgStr.includes("card_wool")) {
-            transferResource(agreeingPlayer, tradingPlayer, sheep);
-        } else if (imgStr.includes("card_lumber")) {
-            transferResource(agreeingPlayer, tradingPlayer, wood);
-        } else if (imgStr.includes("card_brick")) {
-            transferResource(agreeingPlayer, tradingPlayer, brick);
-        } else if (imgStr.includes("card_ore")) {
-            transferResource(agreeingPlayer, tradingPlayer, stone);
-        } else if (imgStr.includes("card_grain")) {
-            transferResource(agreeingPlayer, tradingPlayer, wheat);
-        }
-    }
-}
+// function parseTradedMessage(pElement, prevElement) {
+//     var textContent = pElement.textContent;
+//     if (!textContent.includes(tradedWithSnippet)) {
+//         return;
+//     }
+//     var tradingPlayer = textContent.split(tradedWithSnippet)[0];
+//     var agreeingPlayer = textContent.split(tradedWithSnippet)[1];
+//     if (!resources[tradingPlayer] || !resources[agreeingPlayer]) {
+//         console.log("Failed to parse player...", tradingPlayer, agreeingPlayer, pElement.textContent, prevElement.textContent, resources);
+//         return;
+//     }
+//     // We have to split on the text, which isn't wrapped in tags, so we parse innerHTML, which prints the HTML and the text.
+//     var innerHTML = prevElement.innerHTML; // on the trade description msg
+//     var wantstogive = innerHTML.slice(innerHTML.indexOf(tradeWantsToGiveSnippet), innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
+//     var givefor = innerHTML.slice(innerHTML.indexOf(tradeGiveForSnippet)).split("<img");
+//     for (var imgStr of wantstogive) {
+//         if (imgStr.includes("card_wool")) {
+//             transferResource(tradingPlayer, agreeingPlayer, sheep);
+//         } else if (imgStr.includes("card_lumber")) {
+//             transferResource(tradingPlayer, agreeingPlayer, wood);
+//         } else if (imgStr.includes("card_brick")) {
+//             transferResource(tradingPlayer, agreeingPlayer, brick);
+//         } else if (imgStr.includes("card_ore")) {
+//             transferResource(tradingPlayer, agreeingPlayer, stone);
+//         } else if (imgStr.includes("card_grain")) {
+//             transferResource(tradingPlayer, agreeingPlayer, wheat);
+//         }
+//     }
+//     for (var imgStr of givefor) {
+//         if (imgStr.includes("card_wool")) {
+//             transferResource(agreeingPlayer, tradingPlayer, sheep);
+//         } else if (imgStr.includes("card_lumber")) {
+//             transferResource(agreeingPlayer, tradingPlayer, wood);
+//         } else if (imgStr.includes("card_brick")) {
+//             transferResource(agreeingPlayer, tradingPlayer, brick);
+//         } else if (imgStr.includes("card_ore")) {
+//             transferResource(agreeingPlayer, tradingPlayer, stone);
+//         } else if (imgStr.includes("card_grain")) {
+//             transferResource(agreeingPlayer, tradingPlayer, wheat);
+//         }
+//     }
+// }
 
-/**
- * Message T-1: [stealingPlayer] stole [resource] from: [targetPlayer]
- * Message T: [stealingPlayer] stole: [resource]
- */
-function parseStoleFromYouMessage(pElement, prevElement) {
-    var textContent = pElement.textContent;
-    if (!textContent.includes(stoleFromYouSnippet)) {
-        return;
-    }
-    var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
-    var stealingPlayer = involvedPlayers[0];
-    var targetPlayer = involvedPlayers[1];
-    if (!resources[stealingPlayer] || !resources[targetPlayer]) {
-        console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
-        return;
-    }
-    var images = collectionToArray(pElement.getElementsByTagName('img'));
-    for (var img of images) {
-        if (img.src.includes("card_wool")) {
-            transferResource(targetPlayer, stealingPlayer, sheep);
-        } else if (img.src.includes("card_lumber")) {
-            transferResource(targetPlayer, stealingPlayer, wood);
-        } else if (img.src.includes("card_brick")) {
-            transferResource(targetPlayer, stealingPlayer, brick);
-        } else if (img.src.includes("card_ore")) {
-            transferResource(targetPlayer, stealingPlayer, stone);
-        } else if (img.src.includes("card_grain")) {
-            transferResource(targetPlayer, stealingPlayer, wheat);
-        }
-    }
-}
 
 /**
  * Message T-1: [stealingPlayer] stole [resource] from: [targetPlayer]
  * Message T is NOT: [stealingPlayer] stole: [resource]
  */
-function parseStoleUnknownMessage(pElement, prevElement) {
-    if (!prevElement) {
-        return;
-    }
-    var messageT = pElement.textContent;
-    var messageTMinus1 = prevElement.textContent;
-    var matches = !messageT.includes(stoleFromYouSnippet) && messageTMinus1.includes(stoleFromSnippet);
-    if (!matches) {
-        return;
-    }
-    // figure out the 2 players
-    var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
-    var stealingPlayer = involvedPlayers[0];
-    var targetPlayer = involvedPlayers[1];
-    if (!resources[stealingPlayer] || !resources[targetPlayer]) {
-        console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
-        return;
-    }
-    // for the player being stolen from, (-1) on all resources that are non-zero
-    // for the player receiving, (+1) for all resources that are non-zero FOR THE OTHER PLAYER
-    // record the unknown and wait for it to surface
-    theft = {
-        who: {
-            stealingPlayer,
-            targetPlayer,
-        },
-        what: {}
-    };
-    for (var resourceType of resourceTypes) {
-        if (resources[targetPlayer][resourceType] > 0) {
-            theft.what[resourceType] = 1;
-        }
-    }
-    var resourceTypesPotentiallyStolen = Object.keys(theft.what);
-    if (resourceTypesPotentiallyStolen.length === 0) {
-        // nothing could have been stolen
-        return;
-    }
-    if (resourceTypesPotentiallyStolen.length === 1) {
-        // only 1 resource could have been stolen, so it's not an unknown
-        transferResource(targetPlayer, stealingPlayer, resourceTypesPotentiallyStolen[0]);
-    } else {
-        // we can't be sure, so record the unknown
-        thefts.push(theft);
-    }
-}
+// function parseStoleUnknownMessage(pElement, prevElement) {
+//     if (!prevElement) {
+//         return;
+//     }
+//     var messageT = pElement.textContent;
+//     var messageTMinus1 = prevElement.textContent;
+//     var matches = !messageT.includes(stoleFromYouSnippet) && messageTMinus1.includes(stoleFromSnippet);
+//     if (!matches) {
+//         return;
+//     }
+//     // figure out the 2 players
+//     var involvedPlayers = prevElement.textContent.replace(stoleFromSnippet, " ").split(" ");
+//     var stealingPlayer = involvedPlayers[0];
+//     var targetPlayer = involvedPlayers[1];
+//     if (!resources[stealingPlayer] || !resources[targetPlayer]) {
+//         console.log("Failed to parse player...", stealingPlayer, targetPlayer, resources);
+//         return;
+//     }
+//     // for the player being stolen from, (-1) on all resources that are non-zero
+//     // for the player receiving, (+1) for all resources that are non-zero FOR THE OTHER PLAYER
+//     // record the unknown and wait for it to surface
+//     let theft = {
+//         who: {
+//             stealingPlayer,
+//             targetPlayer,
+//         },
+//         what: {}
+//     };
+//     for (var resourceType of resourceTypes) {
+//         if (resources[targetPlayer][resourceType] > 0) {
+//             theft.what[resourceType] = 1;
+//         }
+//     }
+//     var resourceTypesPotentiallyStolen = Object.keys(theft.what);
+//     if (resourceTypesPotentiallyStolen.length === 0) {
+//         // nothing could have been stolen
+//         return;
+//     }
+//     if (resourceTypesPotentiallyStolen.length === 1) {
+//         // only 1 resource could have been stolen, so it's not an unknown
+//         transferResource(targetPlayer, stealingPlayer, resourceTypesPotentiallyStolen[0]);
+//     } else {
+//         // we can't be sure, so record the unknown
+//         thefts.push(theft);
+//     }
+// }
 
 /**
  * See if thefts can be solved based on current resource count.
@@ -590,9 +655,10 @@ var ALL_PARSERS = [
     parseTradeBankMessage,
     parseStoleAllOfMessage,
     parseDiscardedMessage,
-    parseTradedMessage,
-    parseStoleFromYouMessage,
-    parseStoleUnknownMessage,
+    // parseTradedMessage,
+    parseStoleMessage,
+    // parseStoleUnknownMessage,
+    parseYearOfPlentyMessage,
 ];
 
 /**
@@ -601,8 +667,18 @@ var ALL_PARSERS = [
 function parseLatestMessages() {
     var allMessages = getAllMessages();
     var newOffset = allMessages.length;
+    if (newOffset === MSG_OFFSET) {
+        return;
+    }
+
+    console.log("new offset", newOffset, "MSG OFFSET", MSG_OFFSET);
     var newMessages = allMessages.slice(MSG_OFFSET);
+    console.log(newMessages);
+    console.log(newMessages.map(m => m.textContent));
     ALL_PARSERS.forEach(parser => newMessages.forEach((msg, idx) => {
+        if (idx === 0 && MSG_OFFSET === 0) {
+            return;
+        }
         var prevMessage = idx > 0 ? newMessages[idx - 1] : allMessages[MSG_OFFSET - 1];
         parser(msg, prevMessage);
     }));
@@ -621,6 +697,8 @@ function startWatchingMessages() {
 function tallyInitialResources() {
     var allMessages = getAllMessages();
     MSG_OFFSET = allMessages.length;
+    console.log("tallying resources")
+    console.log(allMessages.map(m => m.textContent))
     allMessages.forEach(parseGotMessage);
     deleteDiscordSigns();
     render();
@@ -636,18 +714,18 @@ function recognizeUsers() {
     .filter(msg => msg.textContent.includes(placeInitialSettlementSnippet));
     console.log("total placement messages", placementMessages.length);
     for (var msg of placementMessages) {
-        msg_text = msg.textContent;
-        username = msg_text.replace(placeInitialSettlementSnippet, "").split(" ")[0];
+        let msg_text = msg.textContent;
+        let username = msg_text.replace(placeInitialSettlementSnippet, "").split(" ")[0];
         console.log(username);
         if (!resources[username]) {
             players.push(username);
             player_colors[username] = msg.style.color;
             resources[username] = {
                 [wood]: 0,
-                [stone]: 0,
-                [wheat]: 0,
                 [brick]: 0,
                 [sheep]: 0,
+                [wheat]: 0,
+                [stone]: 0,
             };
         }
     }
@@ -684,13 +762,17 @@ function collectionToArray(collection) {
 * Wait for players to place initial settlements so we can determine who the players are.
 */
 function waitForInitialPlacement() {
+    console.log("setting interval")
     var interval = setInterval(() => {
+        console.log("here I am")
         if (initialPlacementMade) {
+            console.log("initial placements made!")
             clearInterval(interval);
             loadCounter();
         } else {
             var messages = Array.prototype.slice.call(logElement.children).map(p => p.textContent);
-            if (messages.some(m => m === initialPlacementDoneMessage)) {
+            var firstMatchingMessage = messages.find(m => m.includes(placeInitialSettlementSnippet));
+            if (firstMatchingMessage && messages.filter(m => m === firstMatchingMessage).length >= 4) {
                 initialPlacementMade = true;
             }
         }
@@ -709,7 +791,7 @@ function findTranscription() {
         } else {
             logElement = document.getElementById("game-log-text");
         }
-    }, 500);
+    }, 100);
 }
 
 
